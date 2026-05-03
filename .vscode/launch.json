@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run BitLink",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/BitLink.exe",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build",
+      "externalConsole": true,
+      "MIMode": "gdb"
+    }
+  ]
+}
