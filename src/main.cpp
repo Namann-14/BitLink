@@ -1,5 +1,6 @@
 #include <iostream>
 #include <stdexcept>
+#include <fstream>
 #include "bencode/bencode.h"
 #include "torrent/torrent.h"
 #include "crypto/sha1.h"
@@ -44,50 +45,88 @@ int main() {
         bencode::printBencode(trackerRoot);
         
         std::vector<torrent::Peer> peers = torrent::extractPeers(trackerRoot);
-        torrent::Peer* targetPeer = nullptr;
-        for (auto& p : peers) {
-            if (p.ip.find('.') != std::string::npos) {
-                targetPeer = &p;
-                break;
-            }
-        }
-
-        if (!targetPeer) {
-            std::cout << "No IPv4 peers found in tracker response.\n";
-            return 0;
-        }
-
-        std::cout << "\n--- Connecting to Peer: " << targetPeer->ip << ":" << targetPeer->port << " ---\n";
         
-        net::TcpSocket sock;
-        sock.connect(targetPeer->ip, targetPeer->port);
-        std::cout << "Connected!\n";
+        bool success = false;
+        for (auto& p : peers) {
+            std::cout << "\n--- Attempting Peer: " << p.ip << ":" << p.port << " ---\n";
+            try {
+                net::TcpSocket sock;
+                sock.connect(p.ip, p.port);
+                std::cout << "Connected!\n";
 
-        std::vector<uint8_t> handshake;
-        handshake.push_back(19);
-        std::string protocol = "BitTorrent protocol";
-        handshake.insert(handshake.end(), protocol.begin(), protocol.end());
-        for (int k = 0; k < 8; k++) handshake.push_back(0); // 8 reserved bytes
-        handshake.insert(handshake.end(), info.infoHash.begin(), info.infoHash.end());
-        handshake.insert(handshake.end(), peerId.begin(), peerId.end());
+                std::vector<uint8_t> handshake;
+                handshake.push_back(19);
+                std::string protocol = "BitTorrent protocol";
+                handshake.insert(handshake.end(), protocol.begin(), protocol.end());
+                for (int k = 0; k < 8; k++) handshake.push_back(0);
+                handshake.insert(handshake.end(), info.infoHash.begin(), info.infoHash.end());
+                handshake.insert(handshake.end(), peerId.begin(), peerId.end());
 
-        std::cout << "Sending Handshake...\n";
-        sock.send(handshake);
+                sock.send(handshake);
+                std::vector<uint8_t> response = sock.receive(68);
 
-        std::cout << "Waiting for peer response (68 bytes)...\n";
-        std::vector<uint8_t> response = sock.receive(68);
+                if (response[0] == 19 && std::string(response.begin() + 1, response.begin() + 20) == "BitTorrent protocol") {
+                    std::string peerHash(response.begin() + 28, response.begin() + 48);
+                    if (peerHash == info.infoHash) {
+                        std::cout << "[SUCCESS] Handshake successful!\n";
 
-        std::cout << "Received Peer Handshake!\n";
-        if (response[0] == 19 && std::string(response.begin() + 1, response.begin() + 20) == "BitTorrent protocol") {
-            std::cout << "[SUCCESS] Protocol Match: BitTorrent protocol\n";
-            std::string peerHash(response.begin() + 28, response.begin() + 48);
-            if (peerHash == info.infoHash) {
-                std::cout << "[SUCCESS] Info Hash Match! We are officially in the swarm!\n";
-            } else {
-                std::cout << "[ERROR] Info Hash Mismatch!\n";
+                        std::cout << "Sending 'Interested' message...\n";
+                        std::vector<uint8_t> interestedMsg = {0, 0, 0, 1, 2};
+                        sock.send(interestedMsg);
+
+                        bool unchoked = false;
+                        bool hasBitfield = false;
+                        int msgCount = 0;
+                        while (!unchoked && msgCount < 5) { // Try up to 5 messages
+                            net::PeerMessage msg = sock.receiveMessage();
+                            msgCount++;
+                            if (msg.id == 5) {
+                                std::cout << "-> Peer sent Bitfield! They have pieces.\n";
+                                hasBitfield = true;
+                            } else if (msg.id == 1) {
+                                std::cout << "-> Peer sent UNCHOKE!\n";
+                                unchoked = true;
+                            }
+                        }
+
+                        if (!unchoked || !hasBitfield) {
+                            std::cout << "Peer didn't unchoke or has no pieces. Trying next peer...\n";
+                            continue;
+                        }
+
+                        std::cout << "\n--- Requesting Block ---\n";
+                        std::vector<uint8_t> reqMsg = {
+                            0, 0, 0, 13, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0
+                        };
+                        sock.send(reqMsg);
+
+                        bool blockReceived = false;
+                        while (!blockReceived) {
+                            net::PeerMessage msg = sock.receiveMessage();
+                            if (msg.id == 7) {
+                                std::cout << "-> Peer sent PIECE! We got the data!\n";
+                                if (msg.payload.size() >= 8) {
+                                    int blockSize = msg.payload.size() - 8;
+                                    std::ofstream out("ubuntu_piece0_block0.dat", std::ios::binary);
+                                    out.write(reinterpret_cast<const char*>(msg.payload.data() + 8), blockSize);
+                                    out.close();
+                                    std::cout << "\n[SUCCESS] Block successfully written to 'ubuntu_piece0_block0.dat'!\n";
+                                }
+                                blockReceived = true;
+                            }
+                        }
+
+                        success = true;
+                        break; // Stop after downloading one block!
+                    }
+                }
+            } catch (const std::exception& e) {
+                std::cout << "Failed: " << e.what() << "\n";
             }
-        } else {
-            std::cout << "[ERROR] Invalid protocol string from peer.\n";
+        }
+
+        if (!success) {
+            std::cout << "\nFailed to download block from any peer.\n";
         }
 
     } catch (const std::exception& e) {

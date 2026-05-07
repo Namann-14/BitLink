@@ -25,21 +25,37 @@ namespace net {
     }
 
     void TcpSocket::connect(const std::string& ip, int port) {
-        sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (sock == INVALID_SOCKET) {
-            throw std::runtime_error("Error at socket(): " + std::to_string(WSAGetLastError()));
+        addrinfo hints;
+        ZeroMemory(&hints, sizeof(hints));
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_protocol = IPPROTO_TCP;
+
+        addrinfo* result = NULL;
+        int iResult = getaddrinfo(ip.c_str(), std::to_string(port).c_str(), &hints, &result);
+        if (iResult != 0) {
+            throw std::runtime_error("getaddrinfo failed: " + std::to_string(iResult));
         }
 
-        sockaddr_in clientService;
-        clientService.sin_family = AF_INET;
-        clientService.sin_port = htons(port);
-        inet_pton(AF_INET, ip.c_str(), &clientService.sin_addr);
+        for (addrinfo* ptr = result; ptr != NULL; ptr = ptr->ai_next) {
+            sock = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+            if (sock == INVALID_SOCKET) {
+                continue;
+            }
 
-        int iResult = ::connect(sock, (SOCKADDR*)&clientService, sizeof(clientService));
-        if (iResult == SOCKET_ERROR) {
+            iResult = ::connect(sock, ptr->ai_addr, (int)ptr->ai_addrlen);
+            if (iResult != SOCKET_ERROR) {
+                break; // Successfully connected
+            }
+
             closesocket(sock);
             sock = INVALID_SOCKET;
-            throw std::runtime_error("Unable to connect to server: " + std::to_string(WSAGetLastError()));
+        }
+
+        freeaddrinfo(result);
+
+        if (sock == INVALID_SOCKET) {
+            throw std::runtime_error("Unable to connect to server: " + ip + ":" + std::to_string(port));
         }
     }
 
@@ -65,6 +81,27 @@ namespace net {
             }
         }
         return buffer;
+    }
+
+    PeerMessage TcpSocket::receiveMessage() {
+        PeerMessage msg;
+        
+        std::vector<uint8_t> lenBytes = receive(4);
+        msg.length = (lenBytes[0] << 24) | (lenBytes[1] << 16) | (lenBytes[2] << 8) | lenBytes[3];
+
+        if (msg.length == 0) {
+            msg.id = 255; // Dummy ID for keep-alive
+            return msg;
+        }
+
+        std::vector<uint8_t> idByte = receive(1);
+        msg.id = idByte[0];
+
+        if (msg.length > 1) {
+            msg.payload = receive(msg.length - 1);
+        }
+
+        return msg;
     }
 
 }
