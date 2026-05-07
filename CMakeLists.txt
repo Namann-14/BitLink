@@ -11,4 +11,4 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 # make the executable
 add_executable(BitLink ${SOURCES})
 # link windows HTTP library
-target_link_libraries(BitLink winhttp)
+target_link_libraries(BitLink winhttp ws2_32)

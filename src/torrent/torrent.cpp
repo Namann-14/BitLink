@@ -69,4 +69,38 @@ namespace torrent {
         return info;
     }
 
+    std::vector<Peer> extractPeers(const bencode::BencodeValue& trackerResponse) {
+        std::vector<Peer> peers;
+
+        if (!std::holds_alternative<bencode::BencodeDict>(trackerResponse)) {
+            return peers;
+        }
+
+        const auto& rootDict = std::get<bencode::BencodeDict>(trackerResponse);
+        auto peersIt = rootDict.find("peers");
+        
+        if (peersIt != rootDict.end() && std::holds_alternative<bencode::BencodeList>(peersIt->second)) {
+            const auto& peerList = std::get<bencode::BencodeList>(peersIt->second);
+            for (const auto& peerVal : peerList) {
+                if (std::holds_alternative<bencode::BencodeDict>(peerVal)) {
+                    const auto& peerDict = std::get<bencode::BencodeDict>(peerVal);
+                    
+                    auto ipIt = peerDict.find("ip");
+                    auto portIt = peerDict.find("port");
+                    
+                    if (ipIt != peerDict.end() && std::holds_alternative<std::string>(ipIt->second) &&
+                        portIt != peerDict.end() && std::holds_alternative<int64_t>(portIt->second)) {
+                        
+                        Peer p;
+                        p.ip = std::get<std::string>(ipIt->second);
+                        p.port = static_cast<int>(std::get<int64_t>(portIt->second));
+                        peers.push_back(p);
+                    }
+                }
+            }
+        }
+
+        return peers;
+    }
+
 }

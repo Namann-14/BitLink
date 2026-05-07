@@ -14,7 +14,13 @@ namespace torrent {
         std::string infoHashHex;
     };
 
+    struct Peer {
+        std::string ip;
+        int port;
+    };
+
     std::string loadFile(const std::string& path);
     TorrentInfo extractMetadata(const bencode::BencodeValue& root);
+    std::vector<Peer> extractPeers(const bencode::BencodeValue& trackerResponse);
 
 }
