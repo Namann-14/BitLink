@@ -2,6 +2,8 @@
 #include <stdexcept>
 #include "bencode/bencode.h"
 #include "torrent/torrent.h"
+#include "crypto/sha1.h"
+#include "net/http.h"
 
 int main() {
     try {
@@ -22,6 +24,23 @@ int main() {
         std::cout << "Piece Length: " << info.pieceLength << "\n";
         std::cout << "Pieces (Hash Count): " << (info.pieces.size() / 20) << "\n";
         std::cout << "Info Hash (Hex): " << info.infoHashHex << "\n";
+
+        std::cout << "\n--- Requesting Tracker ---\n";
+        std::string peerId = "-BL0001-123456789012";
+        std::string url = info.announce + 
+            "?info_hash=" + crypto::urlEncode(info.infoHash) +
+            "&peer_id=" + crypto::urlEncode(peerId) +
+            "&port=6881&uploaded=0&downloaded=0&left=0&compact=1";
+            
+        std::cout << "GET " << url << "\n";
+        std::string trackerResponse = net::httpGet(url);
+        
+        std::cout << "Received " << trackerResponse.size() << " bytes from tracker.\n";
+        
+        int j = 0;
+        bencode::BencodeValue trackerRoot = bencode::parse(trackerResponse, j);
+        std::cout << "--- Tracker Response ---\n";
+        bencode::printBencode(trackerRoot);
         
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";

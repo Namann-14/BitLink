@@ -101,4 +101,24 @@ namespace crypto {
         }
         return ss.str();
     }
+
+    std::string urlEncode(const std::string& input) {
+        std::stringstream escaped;
+        escaped.fill('0');
+        escaped << std::hex;
+
+        for (unsigned char c : input) {
+            // Keep alphanumeric and other accepted characters intact
+            if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+                escaped << c;
+            } else {
+                // Any other characters are percent-encoded
+                escaped << std::uppercase;
+                escaped << '%' << std::setw(2) << int(c);
+                escaped << std::nouppercase;
+            }
+        }
+
+        return escaped.str();
+    }
 }
