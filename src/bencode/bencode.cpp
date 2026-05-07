@@ -1,6 +1,7 @@
 #include "bencode/bencode.h"
 #include <cctype>
 #include <stdexcept>
+#include <iostream>
 
 namespace bencode {
 
@@ -77,6 +78,62 @@ namespace bencode {
         } else {
             throw std::runtime_error("Invalid bencode format");
         }
+    }
+
+    void printBencode(const BencodeValue& value, int indent) {
+        std::string ind(indent, ' ');
+        if (std::holds_alternative<int64_t>(value)) {
+            std::cout << ind << std::get<int64_t>(value) << "\n";
+        } else if (std::holds_alternative<std::string>(value)) {
+            const auto& str = std::get<std::string>(value);
+            bool isAscii = true;
+            for (unsigned char c : str) {
+                if (c < 32 || c > 126) { isAscii = false; break; }
+            }
+            if (isAscii && str.size() < 256) {
+                std::cout << ind << "\"" << str << "\"\n";
+            } else {
+                std::cout << ind << "<binary string length=" << str.size() << ">\n";
+            }
+        } else if (std::holds_alternative<BencodeList>(value)) {
+            std::cout << ind << "[\n";
+            for (const auto& item : std::get<BencodeList>(value)) {
+                printBencode(item, indent + 2);
+            }
+            std::cout << ind << "]\n";
+        } else if (std::holds_alternative<BencodeDict>(value)) {
+            std::cout << ind << "{\n";
+            for (const auto& [key, val] : std::get<BencodeDict>(value)) {
+                std::cout << ind << "  \"" << key << "\":\n";
+                printBencode(val, indent + 4);
+            }
+            std::cout << ind << "}\n";
+        }
+    }
+
+    std::string encode(const BencodeValue& value) {
+        if (std::holds_alternative<int64_t>(value)) {
+            return "i" + std::to_string(std::get<int64_t>(value)) + "e";
+        } else if (std::holds_alternative<std::string>(value)) {
+            const auto& str = std::get<std::string>(value);
+            return std::to_string(str.size()) + ":" + str;
+        } else if (std::holds_alternative<BencodeList>(value)) {
+            std::string res = "l";
+            for (const auto& item : std::get<BencodeList>(value)) {
+                res += encode(item);
+            }
+            res += "e";
+            return res;
+        } else if (std::holds_alternative<BencodeDict>(value)) {
+            std::string res = "d";
+            for (const auto& [key, val] : std::get<BencodeDict>(value)) {
+                res += std::to_string(key.size()) + ":" + key;
+                res += encode(val);
+            }
+            res += "e";
+            return res;
+        }
+        return "";
     }
 
 }

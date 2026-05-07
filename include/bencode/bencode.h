@@ -22,5 +22,7 @@ namespace bencode {
     };
 
     BencodeValue parse(const std::string& data, int& i);
+    void printBencode(const BencodeValue& value, int indent = 0);
+    std::string encode(const BencodeValue& value);
 
 }
